@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Deploy verified release to production
+      - name: Verify production deployment prerequisites
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -29,4 +29,4 @@ jobs:
           script: |
             set -Eeuo pipefail
             git -C /root/autodl-tmp/auralink-github-staging/auralink-web fetch --no-tags origin release
-            /root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh deploy "${{ github.sha }}"
+            /root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh dry-run "${{ github.sha }}"
