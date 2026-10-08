@@ -2,7 +2,8 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [release]
+    branches:
+      - release
 
 permissions:
   contents: read
@@ -26,4 +27,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
+            set -Eeuo pipefail
+            git -C /root/autodl-tmp/auralink-github-staging/auralink-web fetch --no-tags origin release
             /root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh dry-run "${{ github.sha }}"
