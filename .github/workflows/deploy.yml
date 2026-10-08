@@ -28,5 +28,26 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           script: |
             set -Eeuo pipefail
-            git -C /root/autodl-tmp/auralink-github-staging/auralink-web fetch --no-tags origin release
+
+            fetch_ok=0
+            for attempt in 1 2 3; do
+              echo "Fetching release branch: attempt ${attempt}/3"
+              if timeout 60 git -c http.version=HTTP/1.1 \
+                -C /root/autodl-tmp/auralink-github-staging/auralink-web \
+                fetch --no-tags origin release
+              then
+                fetch_ok=1
+                break
+              fi
+
+              if [ "$attempt" -lt 3 ]; then
+                sleep $((attempt * 5))
+              fi
+            done
+
+            if [ "$fetch_ok" -ne 1 ]; then
+              echo "Failed to fetch release after 3 attempts" >&2
+              exit 1
+            fi
+
             /root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh deploy "${{ github.sha }}"
