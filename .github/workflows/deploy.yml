@@ -7,7 +7,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    environment:
+      name: production
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    timeout-minutes: 15
     steps:
       - name: Remote deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
