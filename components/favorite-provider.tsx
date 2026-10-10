@@ -23,11 +23,11 @@ const FavoriteContext = createContext<FavoriteContextValue | null>(null);
 
 /**
  * Session-scoped favorite overrides keep Gallery, detail, and /me consistent
- * between server refreshes. They are deliberately discarded for every token
- * change; an old response is never allowed to affect a newer account.
+ * between server refreshes. They are deliberately discarded for every login
+ * generation; an old response is never allowed to affect a newer session.
  */
 export function FavoriteProvider({ children }: { children: React.ReactNode }) {
-  const { token, status, isCurrentSession } = useSession();
+  const { token, status, sessionIdentity, isCurrentSession } = useSession();
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const overridesRef = useRef(overrides);
@@ -44,7 +44,7 @@ export function FavoriteProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setOverrides({});
     setBusy(new Set());
-  }, [token]);
+  }, [sessionIdentity]);
 
   const isFavorited = useCallback(
     (paintingId: string, serverValue: boolean) => overrides[paintingId] ?? serverValue,
@@ -65,6 +65,7 @@ export function FavoriteProvider({ children }: { children: React.ReactNode }) {
     }
 
     const requestToken = token;
+    const requestIdentity = sessionIdentity;
     const priorOverride = overridesRef.current[paintingId];
     const previousValue = priorOverride ?? serverValue;
     const nextValue = !previousValue;
@@ -78,7 +79,7 @@ export function FavoriteProvider({ children }: { children: React.ReactNode }) {
       else await api.unfavoritePainting(paintingId, requestToken);
       return nextValue;
     } catch (error) {
-      if (isCurrentSession(requestToken)) {
+      if (isCurrentSession(requestIdentity)) {
         const restored = { ...overridesRef.current };
         if (priorOverride === undefined) delete restored[paintingId];
         else restored[paintingId] = priorOverride;
@@ -87,14 +88,14 @@ export function FavoriteProvider({ children }: { children: React.ReactNode }) {
       }
       throw error;
     } finally {
-      if (isCurrentSession(requestToken)) {
+      if (isCurrentSession(requestIdentity)) {
         const released = new Set(busyRef.current);
         released.delete(paintingId);
         busyRef.current = released;
         setBusy(released);
       }
     }
-  }, [isCurrentSession, status, token]);
+  }, [isCurrentSession, sessionIdentity, status, token]);
 
   const value = useMemo(
     () => ({ isFavorited, isFavoriteBusy, toggleFavorite }),

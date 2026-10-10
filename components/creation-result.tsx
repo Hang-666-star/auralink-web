@@ -8,7 +8,7 @@ import { poemTitleLabel } from "@/lib/creation-poem";
 import type { CreationDetail } from "@/lib/types";
 
 export function CreationResult({ creation }: { creation: CreationDetail }) {
-  const { token, signOut } = useSession();
+  const { token, sessionIdentity, signOutIfCurrent } = useSession();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
@@ -29,15 +29,17 @@ export function CreationResult({ creation }: { creation: CreationDetail }) {
         setObjectUrl(url);
       })
       .catch((caught) => {
-        if (isAbortError(caught)) return;
-        if (caught instanceof ApiError && caught.kind === "unauthorized") signOut();
-        setMediaError(errorMessage(caught, "暂时无法读取本轮私有媒体；其他创作信息已保留，请稍后重试。"));
+        if (isAbortError(caught) || controller.signal.aborted) return;
+        if (caught instanceof ApiError && caught.kind === "unauthorized") signOutIfCurrent(sessionIdentity);
+        setMediaError(caught instanceof ApiError && caught.kind === "not_found"
+          ? "这张历史作品图片暂不可用；作品记录和登录状态已保留。"
+          : errorMessage(caught, "暂时无法读取本轮私有媒体；其他创作信息已保留，请稍后重试。"));
       });
     return () => {
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [creation.finalAssetContentUrl, signOut, token]);
+  }, [creation.finalAssetContentUrl, sessionIdentity, signOutIfCurrent, token]);
 
   if (creation.finalPoem) {
     return (

@@ -227,7 +227,7 @@ async function apiMediaBlob(
   try {
     response = await fetch(url, {
       headers: {
-        Accept: "image/*,audio/*,application/octet-stream",
+        Accept: "image/*,audio/*,application/octet-stream,application/json",
         Authorization: `Bearer ${token}`,
       },
       signal,
