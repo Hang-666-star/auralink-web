@@ -1,0 +1,6 @@
+# Every production web change requires owner review.
+* @Hang-666-star
+
+/.github/workflows/ @Hang-666-star
+/app/gallery/ @Hang-666-star
+/lib/api/ @Hang-666-star
