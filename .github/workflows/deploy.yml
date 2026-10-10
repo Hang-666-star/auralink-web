@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Deploy verified release to production
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -29,11 +29,25 @@ jobs:
           script: |
             set -Eeuo pipefail
 
+            expected_sha="${{ github.sha }}"
+            staging_dir=/root/autodl-tmp/auralink-github-staging/auralink-web
+            deploy_helper=/root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh
+
+            if ! staging_prefix="$(git -C "$staging_dir" rev-parse --show-prefix)" || [ -n "$staging_prefix" ]; then
+              echo "Web staging directory is not a Git repository" >&2
+              exit 1
+            fi
+
+            if [ ! -x "$deploy_helper" ]; then
+              echo "Web deployment helper is not executable" >&2
+              exit 1
+            fi
+
             fetch_ok=0
             for attempt in 1 2 3; do
               echo "Fetching release branch: attempt ${attempt}/3"
               if timeout 60 git -c http.version=HTTP/1.1 \
-                -C /root/autodl-tmp/auralink-github-staging/auralink-web \
+                -C "$staging_dir" \
                 fetch --no-tags origin release
               then
                 fetch_ok=1
@@ -50,4 +64,11 @@ jobs:
               exit 1
             fi
 
-            /root/autodl-tmp/auralink-web-deploy/bin/deploy-web.sh deploy "${{ github.sha }}"
+            fetched_sha="$(git -C "$staging_dir" rev-parse --verify 'FETCH_HEAD^{commit}')"
+            if [ "$fetched_sha" != "$expected_sha" ]; then
+              echo "Release changed while this deployment was queued; refusing to deploy $expected_sha (fetched $fetched_sha)" >&2
+              exit 1
+            fi
+
+            "$deploy_helper" deploy "$expected_sha"
+

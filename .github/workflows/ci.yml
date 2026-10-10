@@ -23,6 +23,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Verify deployment shell
+        run: python3 tests/deploy-workflow-fixtures.py --bash bash
+
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -60,3 +63,4 @@ jobs:
             exit 1
           fi
           echo "Verified promotion path: main -> release"
+
