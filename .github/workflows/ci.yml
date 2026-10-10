@@ -2,6 +2,7 @@ name: Web CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
     branches: [main, release]
   push:
     branches: [main]
@@ -21,6 +22,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Verify deployment shell
+        run: python3 tests/deploy-workflow-fixtures.py --bash bash
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -51,9 +55,11 @@ jobs:
       - name: Require the main branch as the release source
         env:
           HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ "$HEAD_BRANCH" != "main" ]; then
-            echo "Only pull requests from main may target release." >&2
+          if [ "$HEAD_BRANCH" != "main" ] || [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then
+            echo "Only main from this repository may target release." >&2
             exit 1
           fi
           echo "Verified promotion path: main -> release"

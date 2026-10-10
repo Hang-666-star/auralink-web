@@ -136,7 +136,7 @@ function sourceIssueFor(
 }
 
 export function StudioScreen() {
-  const { token, signOut } = useSession();
+  const { token, sessionIdentity, signOutIfCurrent } = useSession();
   const [capabilities, setCapabilities] = useState<WorkflowCapabilities | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowPage | null>(null);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
@@ -192,11 +192,11 @@ export function StudioScreen() {
 
   const handleSessionError = useCallback((caught: unknown): boolean => {
     if (caught instanceof ApiError && caught.kind === "unauthorized") {
-      signOut();
+      signOutIfCurrent(sessionIdentity);
       return true;
     }
     return false;
-  }, [signOut]);
+  }, [sessionIdentity, signOutIfCurrent]);
 
   const stopPolling = useCallback(() => {
     pollController.current?.abort();

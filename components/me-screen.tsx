@@ -14,7 +14,7 @@ import type { PaintingPage, PaintingSummary, UserProfile } from "@/lib/types";
 
 export function MeScreen() {
   const router = useRouter();
-  const { token, signOut, isCurrentSession } = useSession();
+  const { token, sessionIdentity, signOut, signOutIfCurrent, isCurrentSession } = useSession();
   const { isFavorited, isFavoriteBusy, toggleFavorite } = useFavorites();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [favorites, setFavorites] = useState<PaintingPage | null>(null);
@@ -23,9 +23,9 @@ export function MeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const handleError = useCallback((caught: unknown) => {
-    if (caught instanceof ApiError && caught.kind === "unauthorized") signOut();
+    if (caught instanceof ApiError && caught.kind === "unauthorized") signOutIfCurrent(sessionIdentity);
     setError(errorMessage(caught));
-  }, [signOut]);
+  }, [sessionIdentity, signOutIfCurrent]);
 
   useEffect(() => {
     if (!token) return;
@@ -50,16 +50,17 @@ export function MeScreen() {
   const removeFavorite = async (painting: PaintingSummary) => {
     if (!token) return;
     const requestToken = token;
+    const requestIdentity = sessionIdentity;
     setError(null);
     try {
       await toggleFavorite(painting.paintingId, isFavorited(painting.paintingId, painting.favorited));
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       const refreshed = await api.favoritePaintings(pageNumber, 12, requestToken);
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       setFavorites(refreshed);
       if (refreshed.items.length === 0 && pageNumber > 0) setPageNumber((current) => current - 1);
     } catch (caught) {
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       handleError(caught);
     }
   };
