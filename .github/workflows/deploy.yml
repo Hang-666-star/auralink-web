@@ -71,4 +71,3 @@ jobs:
             fi
 
             "$deploy_helper" deploy "$expected_sha"
-

@@ -63,4 +63,3 @@ jobs:
             exit 1
           fi
           echo "Verified promotion path: main -> release"
-

@@ -186,4 +186,3 @@ exit "$FIXTURE_HELPER_EXIT"
 
 if __name__ == "__main__":
     main()
-
