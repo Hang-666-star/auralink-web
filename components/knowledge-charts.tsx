@@ -10,6 +10,7 @@ import { StatePanel } from "@/components/state-panel";
 import type { CountItem, PoetryNode, PoetryLink } from "@/lib/knowledge-contracts";
 import { neighborIds } from "@/lib/knowledge-contracts";
 import { resizeMeasuredChart } from "@/lib/chart-resize";
+import { paintingChartHeight } from "@/lib/knowledge-presentation";
 
 echarts.use([BarChart, PieChart, LineChart, GraphChart, TooltipComponent, GridComponent, AriaComponent, CanvasRenderer]);
 const palette = ["#8b6b52", "#657763", "#ad875d", "#778b8c", "#986b6a", "#baa07b", "#78727e", "#9f956b"];
@@ -22,7 +23,7 @@ const base: EChartsOption = {
 };
 
 type Click = { dataType?: string; data?: { id?: string; source?: string; target?: string }; dataIndex?: number };
-function CanvasChart({ option, label, onClick, className = "" }: { option: EChartsOption; label: string; onClick?: (event: Click) => void; className?: string }) {
+function CanvasChart({ option, label, onClick, className = "", height }: { option: EChartsOption; label: string; onClick?: (event: Click) => void; className?: string; height?: number }) {
   const element = useRef<HTMLDivElement>(null);
   const instance = useRef<echarts.EChartsType | null>(null);
   const [failed, setFailed] = useState(false);
@@ -48,12 +49,12 @@ function CanvasChart({ option, label, onClick, className = "" }: { option: EChar
     return () => { chart.off("click", handle); };
   }, [onClick]);
   return <>
-    <div className={`knowledge-chart ${className}`} ref={element} role="img" aria-label={label} />
+    <div className={`knowledge-chart ${className}`} style={height === undefined ? undefined : { height }} ref={element} role="img" aria-label={label} />
     {failed ? <StatePanel compact kind="error" title="图表暂时无法绘制" description="可在下方数据列表查看数值。请重新加载页面后重试。" /> : null}
   </>;
 }
 
-export function MetricChart({ items, kind, unit, label }: { items: CountItem[]; kind: "bar" | "pie" | "line"; unit: string; label: string }) {
+export function MetricChart({ items, kind, unit, label, compact = false }: { items: CountItem[]; kind: "bar" | "pie" | "line"; unit: string; label: string; compact?: boolean }) {
   const option = useMemo<EChartsOption>(() => {
     const common = { ...base, tooltip: { ...base.tooltip, valueFormatter: (value: unknown) => `${String(value)} ${unit}` } };
     if (kind === "pie") return { ...common, series: [{ type: "pie", radius: ["46%", "72%"], center: ["50%", "48%"], label: { show: false }, emphasis: { label: { show: true, formatter: "{b}\n{c}", color: "#5c3a26" } }, data: items }] };
@@ -70,7 +71,7 @@ export function MetricChart({ items, kind, unit, label }: { items: CountItem[]; 
       series: [{ type: "bar", data: items.map((item) => item.value), barMaxWidth: 19, label: { show: true, position: "right", color: "#6b5f4e" }, itemStyle: { borderRadius: [0, 3, 3, 0] } }],
     };
   }, [items, kind, unit]);
-  return <><CanvasChart option={option} label={label} />{kind === "pie" ? <><ul className="knowledge-legend" aria-label={`${label}图例`}>{items.slice(0, 21).map((item, index) => <li key={`${item.name}-${index}`}><span style={{ background: palette[index % palette.length] }} aria-hidden="true" /><b>{item.name}</b><em>{item.value}</em></li>)}</ul>{items.length > 21 ? <p className="knowledge-method">图例列出前 21 项，完整数值见下方列表；环图仍包含全部项目。</p> : null}</> : null}</>;
+  return <><CanvasChart option={option} label={label} height={compact ? paintingChartHeight(kind, items.length) : undefined} />{kind === "pie" ? <><ul className="knowledge-legend" aria-label={`${label}图例`}>{items.slice(0, 21).map((item, index) => <li key={`${item.name}-${index}`}><span style={{ background: palette[index % palette.length] }} aria-hidden="true" /><b>{item.name}</b><em>{item.value}</em></li>)}</ul>{items.length > 21 ? <p className="knowledge-method">图例列出前 21 项，完整数值见下方列表；环图仍包含全部项目。</p> : null}</> : null}</>;
 }
 
 export function PoetryChart({ nodes, links, selectedId, focused, onNode, onEdge }: {

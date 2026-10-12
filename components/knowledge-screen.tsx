@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { StatePanel } from "@/components/state-panel";
 import { useKnowledgeResource } from "@/components/knowledge-resource";
 import { api } from "@/lib/api";
+import { chartTruncatesItems } from "@/lib/knowledge-presentation";
 import { chronologicalItems, filterNodes, graphPage, neighborIds, topGroups, type CountItem, type PaintingMetric, type PoetryGraph, type PoetryLink } from "@/lib/knowledge-contracts";
 
 const chartLoading = () => <StatePanel compact kind="loading" title="正在准备图表" />;
@@ -16,19 +17,34 @@ function ResourceFailure({ error, unavailable, retry, subject }: { error: string
   return <StatePanel kind={unavailable ? "unavailable" : "error"} title={`${subject}${unavailable ? "暂不可用" : "加载失败"}`} description={`${error}${unavailable ? " 该功能需要配套的知识库服务及数据，请在服务就绪后重试。" : ""}`} actionLabel="重新加载" onAction={retry} />;
 }
 
-function ItemTable({ items, unit }: { items: CountItem[]; unit: string }) {
-  return <details className="knowledge-data"><summary>查看数值 · {items.length} 项</summary><div className="knowledge-table-scroll"><table><thead><tr><th scope="col">项目</th><th scope="col">{unit}</th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.name}-${index}`}><th scope="row">{item.name}</th><td>{format.format(item.value)}</td></tr>)}</tbody></table></div></details>;
+function ItemTable({ items, unit, summary, label }: { items: CountItem[]; unit: string; summary?: string; label?: string }) {
+  return <details className="knowledge-data"><summary>{summary || `查看数值 · ${items.length} 项`}</summary><div className="knowledge-table-scroll"><table aria-label={label}><thead><tr><th scope="col">项目</th><th scope="col">{unit}</th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.name}-${index}`}><th scope="row">{item.name}</th><td>{format.format(item.value)}</td></tr>)}</tbody></table></div></details>;
 }
 
-function MetricPanel({ title, eyebrow, metric, children, description }: { title: string; eyebrow: string; metric: PaintingMetric; children?: React.ReactNode; description?: string }) {
-  return <section className="knowledge-panel glass-panel">
-    <header className="knowledge-panel-heading"><span className="knowledge-eyebrow">{eyebrow}</span><h2>{title}</h2>{description ? <p>{description}</p> : null}</header>
+function MetricPanel({ title, metric, children, description, ruleBased = false, wide = false, chartLimit }: {
+  title: string; metric: PaintingMetric; children?: React.ReactNode; description?: string;
+  ruleBased?: boolean; wide?: boolean; chartLimit?: number;
+}) {
+  const chartLimited = chartTruncatesItems(metric.items.length, chartLimit);
+  return <section className={`knowledge-panel knowledge-metric-panel glass-panel${wide ? " knowledge-panel-wide" : ""}`}>
+    <header className="knowledge-panel-heading">
+      <div className="knowledge-metric-title"><h2>{title}</h2>{ruleBased ? <span className="knowledge-rule-badge">规则估计</span> : null}</div>
+      <p className="knowledge-sample">有效样本 {format.format(metric.eligibleRecords)} 幅</p>
+    </header>
     {metric.status === "unavailable" ? <StatePanel compact kind="unavailable" title="暂无可用统计" description={metric.reason || "当前公开字段未提供此项统计所需的数据。"} />
       : metric.items.length ? children : <StatePanel compact kind="empty" title="暂无匹配项目" description={metric.reason || "存在可用字段，但没有匹配到当前统计规则的项目。"} />}
-    <div className="knowledge-coverage"><span>字段可用 {format.format(metric.eligibleRecords)} 幅</span><span>缺失或未公开 {format.format(metric.missingOrRestrictedRecords)} 幅</span>{metric.unmatchedRecords > 0 ? <span>未匹配 {format.format(metric.unmatchedRecords)} 幅</span> : null}</div>
-    <p className="knowledge-method">{metric.method}</p>
-    {metric.truncated ? <p className="knowledge-method">仅显示数量靠前的项目；其余项目未列出。</p> : null}
-    {metric.status === "available" && metric.items.length ? <ItemTable items={metric.items} unit={metric.unit} /> : null}
+    <div className="knowledge-metric-controls">
+      {chartLimited ? <span className="knowledge-limit-note">图中前 {chartLimit} 项</span> : null}
+      <details className="knowledge-metric-details knowledge-data">
+        <summary>说明</summary>
+        {description ? <p className="knowledge-method">{description}</p> : null}
+        <p className="knowledge-method">{metric.method}</p>
+        <div className="knowledge-coverage"><span>缺失或未公开 {format.format(metric.missingOrRestrictedRecords)} 幅</span>{metric.unmatchedRecords > 0 ? <span>未匹配 {format.format(metric.unmatchedRecords)} 幅</span> : null}</div>
+        {chartLimited ? <p className="knowledge-method">图中显示当前排序的前 {chartLimit} 项，数据表列出接口返回的全部 {metric.items.length} 项。</p> : null}
+        {metric.truncated ? <p className="knowledge-method">接口按本指标的排序只返回部分项目，未列出的项目不在图中或数据表内；样本数仍按全部有效画作计。</p> : null}
+      </details>
+      {metric.status === "available" && metric.items.length ? <ItemTable items={metric.items} unit={metric.unit} summary="数据表" label={`${title}数据`} /> : null}
+    </div>
   </section>;
 }
 
@@ -40,23 +56,22 @@ function PaintingView() {
   const { population, authorNames, metrics } = statistics.data;
   return <div id="knowledge-paintings" role="tabpanel" aria-labelledby="knowledge-tab-paintings">
     <div className="knowledge-counts">
-      <section className="knowledge-count glass-panel"><span>画廊可浏览作品</span><strong>{format.format(population.count)}</strong><p>按当前修订与公开媒体资格计数</p></section>
-      <section className="knowledge-count glass-panel"><span>不同作者名称</span><strong>{format.format(authorNames.count)}</strong><p>{format.format(authorNames.eligibleRecords)} 幅作品提供有效公开名称</p></section>
-      <section className="knowledge-count-note"><span className="knowledge-eyebrow">关于这份图录</span><p>从作品观察笔墨、时代与地域。</p><small>名称去重并非人物身份核验，同名与别名可能影响结果。数字随画廊数据变化。</small></section>
+      <section className="knowledge-count glass-panel"><span>作品数</span><strong>{format.format(population.count)}</strong></section>
+      <section className="knowledge-count glass-panel"><span>作者名称数</span><strong>{format.format(authorNames.count)}</strong></section>
     </div>
-    <details className="knowledge-rules"><summary>统计口径与数据边界</summary><p>{population.label}。与画廊使用同一当前修订、发布状态与媒体资格规则；只对允许公开的字段进行聚合。</p><p>空白、未知值与字面量「0」（待核实）不当作有效分类或作者。每张图单独列出字段覆盖；多值标签按规则拆分，同一作品可能贡献多个项目。字段缺失与未公开合并显示，不推断隐藏内容。</p><p>作者按名称规范化后去重，未核验同名异人或一人多名；地域按公开作者名称与出生地文本的去重组合计数，不代表已核验人数或创作地点。情感图为文本关键词规则估计，不是模型分析或客观情绪评分。</p></details>
-    {population.count === 0 ? <StatePanel kind="empty" title="暂无可浏览画作" description="当前画廊没有符合展示条件的作品，因此没有可统计样本。" /> : <div className="knowledge-grid">
-      <MetricPanel title="作者地域分布" eyebrow="地域 / GEOGRAPHY" metric={metrics.geography} description="按公开作者名称与出生地文本的去重组合统计，不代表已核验人数。同名异地或不同出生地描述可能分别计数。图中展示数量前 12 项，完整返回数值见下方列表。">
-        <MetricChart kind="bar" items={metrics.geography.items.slice(0, 12)} unit={metrics.geography.unit} label="作者名称与出生地去重组合的地域分布，图中展示前 12 项，完整返回数值见列表" />
+    <details className="knowledge-rules"><summary>统计说明</summary><p>{population.label}。作品数与画廊使用同一当前修订、发布状态与媒体资格规则；只对允许公开的字段进行聚合。</p><p>作者名称数按规范化后的公开名称去重，不是已核验人数；同名异人和一人多名尚未消歧。{format.format(authorNames.eligibleRecords)} 幅作品提供有效公开名称。</p><p>空白、未知值与字面量「0」（待核实）不当作有效分类或作者。各图有效样本数均按画作计，字段缺失与未公开合并显示，不推断隐藏内容。多值标签按规则拆分，同一作品可能贡献多个项目。</p></details>
+    {population.count === 0 ? <StatePanel kind="empty" title="暂无可浏览画作" description="当前画廊没有符合展示条件的作品，因此没有可统计样本。" /> : <div className="knowledge-grid knowledge-painting-grid">
+      <MetricPanel title="作者地域分布" metric={metrics.geography} chartLimit={12} description="不同出生地描述保留为不同组合；有效样本数按同时提供公开名称和出生地的画作计，出生地不代表创作地点。">
+        <MetricChart compact kind="bar" items={metrics.geography.items.slice(0, 12)} unit={metrics.geography.unit} label="作者名称与出生地去重组合的地域分布，完整返回数值见数据表" />
       </MetricPanel>
-      <MetricPanel title="朝代分布" eyebrow="时代 / DYNASTY" metric={metrics.dynasty} description="图中按时代顺序展示前 12 项；完整返回数值见下方列表。"><MetricChart kind="bar" items={chronologicalItems(metrics.dynasty.items).slice(0, 12)} unit={metrics.dynasty.unit} label="朝代作品数量，图中展示前 12 项，完整返回数值见列表" /></MetricPanel>
-      <MetricPanel title="作品分类数量" eyebrow="题材 / CATEGORY" metric={metrics.category} description="图中展示数量前 12 项；完整返回数值见下方列表。"><MetricChart kind="bar" items={metrics.category.items.slice(0, 12)} unit={metrics.category.unit} label="作品分类数量，图中展示前 12 项，完整返回数值见列表" /></MetricPanel>
-      <MetricPanel title="绘画风格" eyebrow="笔墨 / STYLE" metric={metrics.style}><MetricChart kind="pie" items={metrics.style.items} unit={metrics.style.unit} label="绘画风格分布，完整数值见列表" /></MetricPanel>
-      <MetricPanel title="画中意象" eyebrow="意象 / IMAGERY" metric={metrics.imagery} description="词语大小表示被统计到的频次。">
+      <MetricPanel title="朝代分布" metric={metrics.dynasty} chartLimit={12} description="图中按时代顺序展示；未识别时代保留原值并列于末尾。"><MetricChart compact kind="bar" items={chronologicalItems(metrics.dynasty.items).slice(0, 12)} unit={metrics.dynasty.unit} label="朝代作品数量，完整返回数值见数据表" /></MetricPanel>
+      <MetricPanel title="作品分类" metric={metrics.category} chartLimit={12}><MetricChart compact kind="bar" items={metrics.category.items.slice(0, 12)} unit={metrics.category.unit} label="作品分类数量，完整返回数值见数据表" /></MetricPanel>
+      <MetricPanel title="绘画风格" metric={metrics.style}><MetricChart compact kind="pie" items={metrics.style.items} unit={metrics.style.unit} label="绘画风格分布，完整返回数值见数据表" /></MetricPanel>
+      <MetricPanel title="画中意象" metric={metrics.imagery} wide description="词语大小表示被统计到的频次。">
         <div className="knowledge-wordcloud" aria-label="意象词云">{metrics.imagery.items.map((item, index) => <span key={`${item.name}-${index}`} style={{ fontSize: `${0.85 + 1.7 * Math.sqrt(item.value / Math.max(1, ...metrics.imagery.items.map((entry) => entry.value)))}rem` }} title={`${item.name}：${item.value} ${metrics.imagery.unit}`}>{item.name}</span>)}</div>
       </MetricPanel>
-      <MetricPanel title="配乐情感 · 规则估计" eyebrow="情感 / RULE BASED" metric={metrics.sentiment}><MetricChart kind="pie" items={metrics.sentiment.items} unit={metrics.sentiment.unit} label="配乐情感关键词规则统计，非模型分析" /></MetricPanel>
-      <MetricPanel title="朝代情感 · 规则估计" eyebrow="情感 / RULE BASED" metric={metrics.sentimentByDynasty} description="各朝代有效样本的规则均值；连线不代表历史趋势或因果关系，未识别时代保留原值并列于末尾。"><MetricChart kind="line" items={chronologicalItems(metrics.sentimentByDynasty.items)} unit={metrics.sentimentByDynasty.unit} label="各朝代文本关键词规则估计均值，非客观情绪分数" /></MetricPanel>
+      <MetricPanel title="配乐情感" metric={metrics.sentiment} ruleBased><MetricChart compact kind="pie" items={metrics.sentiment.items} unit={metrics.sentiment.unit} label="配乐情感关键词规则统计，非模型分析" /></MetricPanel>
+      <MetricPanel title="朝代情感" metric={metrics.sentimentByDynasty} ruleBased description="各朝代有效样本的规则均值；连线不代表历史趋势或因果关系，未识别时代保留原值并列于末尾。"><MetricChart compact kind="line" items={chronologicalItems(metrics.sentimentByDynasty.items)} unit={metrics.sentimentByDynasty.unit} label="各朝代文本关键词规则估计均值，非客观情绪分数" /></MetricPanel>
     </div>}
   </div>;
 }
@@ -120,8 +135,8 @@ function PoetryView() {
 export function KnowledgeScreen() {
   const [view, setView] = useState<"paintings" | "poetry">("paintings");
   return <main className="page-shell knowledge-page">
-    <header className="page-header glass-panel knowledge-header"><div><span className="knowledge-eyebrow">DATABASE / 知识库</span><h1>观画有据，读诗有脉</h1><p>从画作统计到诗词关系，循迹探索艺术中的联结。</p></div><span className="knowledge-header-mark" aria-hidden="true">知</span></header>
-    <div className="knowledge-tabs" role="tablist" aria-label="知识库视图">{([['paintings', '国画统计', 'Painting Statistics'], ['poetry', '诗词图谱', 'Poetry Graph']] as const).map(([key, title, english]) => <button type="button" key={key} id={`knowledge-tab-${key}`} role="tab" aria-selected={view === key} aria-controls={`knowledge-${key}`} tabIndex={view === key ? 0 : -1} onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "paintings" : event.key === "End" ? "poetry" : view === "paintings" ? "poetry" : "paintings"; setView(next); document.getElementById(`knowledge-tab-${next}`)?.focus(); } }} onClick={() => setView(key)}><strong>{title}</strong><span>{english}</span></button>)}</div>
+    <header className="knowledge-header glass-panel"><h1>观画有据，读诗有脉</h1><span className="knowledge-header-mark" aria-hidden="true">知</span></header>
+    <div className="knowledge-tabs" role="tablist" aria-label="知识库视图">{([['paintings', '国画统计'], ['poetry', '诗词图谱']] as const).map(([key, title]) => <button type="button" key={key} id={`knowledge-tab-${key}`} role="tab" aria-selected={view === key} aria-controls={`knowledge-${key}`} tabIndex={view === key ? 0 : -1} onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "paintings" : event.key === "End" ? "poetry" : view === "paintings" ? "poetry" : "paintings"; setView(next); document.getElementById(`knowledge-tab-${next}`)?.focus(); } }} onClick={() => setView(key)}><strong>{title}</strong></button>)}</div>
     {view === "paintings" ? <PaintingView /> : <PoetryView />}
   </main>;
 }
