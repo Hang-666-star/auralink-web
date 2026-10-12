@@ -43,7 +43,7 @@ type PrivateMediaPreviewProps = {
 
 /** Owner-scoped media is fetched with the current session and never exposed as a storage path. */
 export function PrivateMediaPreview({ url, modality, alt, className = "" }: PrivateMediaPreviewProps) {
-  const { token, signOut } = useSession();
+  const { token, sessionIdentity, signOutIfCurrent } = useSession();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
@@ -65,14 +65,16 @@ export function PrivateMediaPreview({ url, modality, alt, className = "" }: Priv
       })
       .catch((caught) => {
         if (isAbortError(caught) || controller.signal.aborted) return;
-        if (caught instanceof ApiError && caught.kind === "unauthorized") signOut();
-        setMediaError(errorMessage(caught, "暂时无法读取本轮私有媒体；其他创作信息已保留，请稍后重试。"));
+        if (caught instanceof ApiError && caught.kind === "unauthorized") signOutIfCurrent(sessionIdentity);
+        setMediaError(caught instanceof ApiError && caught.kind === "not_found"
+          ? "这张历史作品图片暂不可用；作品记录和登录状态已保留。"
+          : errorMessage(caught, "暂时无法读取本轮私有媒体；其他创作信息已保留，请稍后重试。"));
       });
     return () => {
       controller.abort();
       if (generatedUrl) URL.revokeObjectURL(generatedUrl);
     };
-  }, [signOut, token, url]);
+  }, [sessionIdentity, signOutIfCurrent, token, url]);
 
   if (!url) return null;
   if (mediaError) return <p className="inline-error" role="alert">{mediaError}</p>;

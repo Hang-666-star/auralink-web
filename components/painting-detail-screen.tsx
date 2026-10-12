@@ -12,15 +12,15 @@ import { api, ApiError, errorMessage } from "@/lib/api";
 import type { PaintingDetail } from "@/lib/types";
 
 export function PaintingDetailScreen({ paintingId }: { paintingId: string }) {
-  const { token, signOut, isCurrentSession } = useSession();
+  const { token, sessionIdentity, signOutIfCurrent, isCurrentSession } = useSession();
   const { isFavorited, isFavoriteBusy, toggleFavorite: toggleSessionFavorite } = useFavorites();
   const [painting, setPainting] = useState<PaintingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const handleAuthError = useCallback((caught: unknown) => {
-    if (caught instanceof ApiError && caught.kind === "unauthorized") signOut();
-  }, [signOut]);
+    if (caught instanceof ApiError && caught.kind === "unauthorized") signOutIfCurrent(sessionIdentity);
+  }, [sessionIdentity, signOutIfCurrent]);
 
   useEffect(() => {
     if (!token) return;
@@ -30,8 +30,9 @@ export function PaintingDetailScreen({ paintingId }: { paintingId: string }) {
     void api.painting(paintingId, token).then((result) => {
       if (active) setPainting(result);
     }).catch((caught) => {
+      if (!active) return;
       handleAuthError(caught);
-      if (active) setError(errorMessage(caught));
+      setError(errorMessage(caught));
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -40,15 +41,15 @@ export function PaintingDetailScreen({ paintingId }: { paintingId: string }) {
 
   const toggleFavorite = async () => {
     if (!painting || !token) return;
-    const requestToken = token;
+    const requestIdentity = sessionIdentity;
     setError(null);
     try {
       const favorited = await toggleSessionFavorite(paintingId, isFavorited(paintingId, painting.favorited));
-      if (isCurrentSession(requestToken)) setPainting((current) => current ? { ...current, favorited } : current);
+      if (isCurrentSession(requestIdentity)) setPainting((current) => current ? { ...current, favorited } : current);
     } catch (caught) {
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       if (caught instanceof ApiError && caught.kind === "unauthorized") {
-        signOut();
+        signOutIfCurrent(requestIdentity);
         return;
       }
       setError(errorMessage(caught));

@@ -15,7 +15,7 @@ import type { PaintingPage, PaintingQuery, PaintingSummary } from "@/lib/types";
 const initialQuery: PaintingQuery = { page: 0, size: 12, sort: "source", direction: "asc" };
 
 export function GalleryScreen() {
-  const { token, status, signOut, isCurrentSession } = useSession();
+  const { token, status, sessionIdentity, signOutIfCurrent, isCurrentSession } = useSession();
   const { isFavorited, isFavoriteBusy, toggleFavorite: toggleSessionFavorite } = useFavorites();
   const authenticated = status === "authenticated" && Boolean(token);
   const [query, setQuery] = useState<PaintingQuery>(initialQuery);
@@ -77,19 +77,19 @@ export function GalleryScreen() {
 
   const toggleFavorite = async (painting: PaintingSummary) => {
     if (!token) return;
-    const requestToken = token;
+    const requestIdentity = sessionIdentity;
     try {
       const favorited = await toggleSessionFavorite(painting.paintingId, painting.favorited);
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       const update = (item: PaintingSummary) => item.paintingId === painting.paintingId
         ? { ...item, favorited }
         : item;
       setPage((current) => current ? { ...current, items: current.items.map(update) } : current);
       setDaily((current) => current ? update(current) : current);
     } catch (caught) {
-      if (!isCurrentSession(requestToken)) return;
+      if (!isCurrentSession(requestIdentity)) return;
       if (caught instanceof ApiError && caught.kind === "unauthorized") {
-        signOut();
+        signOutIfCurrent(requestIdentity);
         return;
       }
       setError(errorMessage(caught));

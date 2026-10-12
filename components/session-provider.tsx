@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { api, ApiError } from "@/lib/api";
+import { SessionIdentityTracker, type SessionIdentity } from "@/lib/session-identity";
 import type { AuthResponse, UserProfile } from "@/lib/types";
 
 const TOKEN_KEY = "artlive.session.token.v1";
@@ -24,7 +25,9 @@ type SessionContextValue = {
   establish: (auth: AuthResponse) => void;
   signOut: () => void;
   restore: () => Promise<void>;
-  isCurrentSession: (candidateToken: string | null) => boolean;
+  sessionIdentity: SessionIdentity;
+  isCurrentSession: (identity: SessionIdentity) => boolean;
+  signOutIfCurrent: (identity: SessionIdentity) => boolean;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -44,57 +47,65 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>("loading");
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const currentTokenRef = useRef<string | null>(null);
+  const identities = useRef(new SessionIdentityTracker());
+  const [sessionIdentity, setSessionIdentity] = useState(identities.current.capture());
 
   const signOut = useCallback(() => {
+    setSessionIdentity(identities.current.replace(null));
     window.localStorage.removeItem(TOKEN_KEY);
-    currentTokenRef.current = null;
     setToken(null);
     setUser(null);
     setStatus("anonymous");
   }, []);
 
+  const isCurrentSession = useCallback(
+    (identity: SessionIdentity) => identities.current.matches(identity),
+    [],
+  );
+
+  const signOutIfCurrent = useCallback((identity: SessionIdentity) => {
+    if (!identities.current.matches(identity)) return false;
+    signOut();
+    return true;
+  }, [signOut]);
+
   const restore = useCallback(async () => {
     const storedToken = window.localStorage.getItem(TOKEN_KEY);
     if (!storedToken) {
-      currentTokenRef.current = null;
+      setSessionIdentity(identities.current.replace(null));
       setToken(null);
       setUser(null);
       setStatus("anonymous");
       return;
     }
 
-    currentTokenRef.current = storedToken;
+    const requestIdentity = identities.current.replace(storedToken);
+    setSessionIdentity(requestIdentity);
     setToken(storedToken);
     setStatus("loading");
     try {
       const profile = await api.profile(storedToken);
-      if (currentTokenRef.current !== storedToken) return;
+      if (!identities.current.matches(requestIdentity)) return;
       setUser(profile);
       setStatus("authenticated");
     } catch (error) {
-      if (currentTokenRef.current !== storedToken) return;
+      if (!identities.current.matches(requestIdentity)) return;
       if (error instanceof ApiError && error.kind === "unauthorized") {
-        signOut();
+        signOutIfCurrent(requestIdentity);
         return;
       }
       setUser(null);
       setStatus("error");
     }
-  }, [signOut]);
+  }, [signOutIfCurrent]);
 
   const establish = useCallback((auth: AuthResponse) => {
+    setSessionIdentity(identities.current.replace(auth.token));
     window.localStorage.setItem(TOKEN_KEY, auth.token);
-    currentTokenRef.current = auth.token;
     setToken(auth.token);
     setUser(profileFromAuth(auth));
     setStatus("authenticated");
   }, []);
-
-  const isCurrentSession = useCallback(
-    (candidateToken: string | null) => currentTokenRef.current === candidateToken,
-    [],
-  );
 
   useEffect(() => {
     void restore();
@@ -109,8 +120,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [restore]);
 
   const value = useMemo(
-    () => ({ status, token, user, establish, signOut, restore, isCurrentSession }),
-    [establish, isCurrentSession, restore, signOut, status, token, user],
+    () => ({ status, token, user, establish, signOut, restore, sessionIdentity, isCurrentSession, signOutIfCurrent }),
+    [establish, isCurrentSession, restore, sessionIdentity, signOut, signOutIfCurrent, status, token, user],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
