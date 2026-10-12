@@ -34,7 +34,6 @@ export type PoetryGraph = {
   relationTypes: CountItem[];
   sourceLimits: string[];
 };
-export type ChinaMap = { type: "FeatureCollection"; features: { type: "Feature"; properties: { name: string }; geometry: { type: "Polygon" | "MultiPolygon"; coordinates: unknown[] } }[] };
 
 export class KnowledgeContractError extends Error {
   constructor() { super("知识库响应格式不完整，请重试或联系维护者核对前后端版本。"); }
@@ -121,17 +120,6 @@ export function parsePoetryGraph(value: unknown): PoetryGraph {
     sourceLimits: array(input.sourceLimits, 30).map(text),
   };
 }
-export function parseChinaMap(value: unknown): ChinaMap {
-  const input = record(value);
-  if (input.type !== "FeatureCollection") return invalid();
-  const features = array(input.features, 100).map((entry) => {
-    const feature = record(entry), properties = record(feature.properties), geometry = record(feature.geometry);
-    if (feature.type !== "Feature" || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return invalid();
-    return { type: "Feature" as const, properties: { name: text(properties.name) }, geometry: { type: geometry.type, coordinates: array(geometry.coordinates, 100000) } };
-  });
-  return { type: "FeatureCollection", features } as ChinaMap;
-}
-
 export function filterNodes(nodes: PoetryNode[], query: string, category: string): PoetryNode[] {
   const search = query.trim().toLocaleLowerCase();
   return nodes.filter((node) => (!category || node.category === category) && (!search || `${node.name}\n${node.category}`.toLocaleLowerCase().includes(search)));

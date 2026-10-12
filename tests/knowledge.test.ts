@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { api, ApiError } from "../lib/api.ts";
-import { chronologicalItems, filterNodes, graphPage, KnowledgeContractError, metricNames, neighborIds, parseChinaMap, parsePaintingStatistics, parsePoetryGraph, topGroups, type PaintingStatistics, type PoetryGraph } from "../lib/knowledge-contracts.ts";
+import { chronologicalItems, filterNodes, graphPage, KnowledgeContractError, metricNames, neighborIds, parsePaintingStatistics, parsePoetryGraph, topGroups, type PaintingStatistics, type PoetryGraph } from "../lib/knowledge-contracts.ts";
 
 // Deliberately synthetic. No production CSV or poetry runtime snapshot is committed.
 function statistics(): PaintingStatistics {
@@ -69,10 +69,19 @@ describe("Knowledge public response contracts", () => {
     input.relationTypes.push({ name: "合成附加标签", value: 1 });
     assert.throws(() => parsePoetryGraph(input), KnowledgeContractError);
   });
-  it("accepts map boundary features with an empty name and rejects executable asset shapes", () => {
-    const map = { type: "FeatureCollection", features: [{ type: "Feature", properties: { name: "" }, geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [0, 0]]] } }] };
-    assert.deepEqual(parseChinaMap(map), map);
-    assert.throws(() => parseChinaMap({ type: "script", features: [] }), KnowledgeContractError);
+  it("preserves geographic pair counts separately from painting coverage", () => {
+    const input = statistics();
+    input.metrics.geography = {
+      status: "available", reason: null, eligibleRecords: 2, missingOrRestrictedRecords: 1,
+      unmatchedRecords: 0, items: [{ name: "浙江省", value: 1 }], truncated: false,
+      unit: "作者名与出生地组合", method: "公开名称与出生地文本去重；未核验人物身份。",
+    };
+    const parsed = parsePaintingStatistics(input);
+    assert.deepEqual(parsed.metrics.geography, input.metrics.geography);
+    assert.equal(parsed.population.count, 3);
+    assert.equal(parsed.authorNames.count, 1);
+    assert.equal(parsed.metrics.geography.eligibleRecords, 2);
+    assert.equal(parsed.metrics.geography.items[0].value, 1);
   });
 });
 
@@ -108,6 +117,22 @@ describe("Knowledge graph interactions", () => {
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 describe("Knowledge API transport", () => {
+  it("loads both no-map resources without requesting a geographic asset", async () => {
+    const paths: string[] = [];
+    globalThis.fetch = async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      paths.push(path);
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer isolated-test-token");
+      const body = path === "/api/v1/knowledge/painting-statistics" ? statistics()
+        : path === "/api/v1/knowledge/poetry-graph" ? graph() : assert.fail(`Unexpected request: ${path}`);
+      return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    };
+    const [paintings, poetry] = await Promise.all([api.paintingStatistics("isolated-test-token"), api.poetryGraph("isolated-test-token")]);
+    assert.equal(paintings.population.count, 3);
+    assert.equal(poetry.nodeCount, 3);
+    assert.deepEqual(paths.sort(), ["/api/v1/knowledge/painting-statistics", "/api/v1/knowledge/poetry-graph"]);
+    assert.equal("chinaMap" in api, false);
+  });
   it("uses authenticated GET, JSON negotiation and an abort signal", async () => {
     const controller = new AbortController();
     globalThis.fetch = async (url, init) => {

@@ -2,16 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, PieChart, LineChart, GraphChart, MapChart } from "echarts/charts";
-import { TooltipComponent, GridComponent, VisualMapComponent, AriaComponent } from "echarts/components";
+import { BarChart, PieChart, LineChart, GraphChart } from "echarts/charts";
+import { TooltipComponent, GridComponent, AriaComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 import { StatePanel } from "@/components/state-panel";
-import type { ChinaMap, CountItem, PoetryNode, PoetryLink } from "@/lib/knowledge-contracts";
+import type { CountItem, PoetryNode, PoetryLink } from "@/lib/knowledge-contracts";
 import { neighborIds } from "@/lib/knowledge-contracts";
 import { resizeMeasuredChart } from "@/lib/chart-resize";
 
-echarts.use([BarChart, PieChart, LineChart, GraphChart, MapChart, TooltipComponent, GridComponent, VisualMapComponent, AriaComponent, CanvasRenderer]);
+echarts.use([BarChart, PieChart, LineChart, GraphChart, TooltipComponent, GridComponent, AriaComponent, CanvasRenderer]);
 const palette = ["#8b6b52", "#657763", "#ad875d", "#778b8c", "#986b6a", "#baa07b", "#78727e", "#9f956b"];
 const textStyle = { color: "#6b5f4e", fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif' };
 const base: EChartsOption = {
@@ -71,19 +71,6 @@ export function MetricChart({ items, kind, unit, label }: { items: CountItem[]; 
     };
   }, [items, kind, unit]);
   return <><CanvasChart option={option} label={label} />{kind === "pie" ? <><ul className="knowledge-legend" aria-label={`${label}图例`}>{items.slice(0, 21).map((item, index) => <li key={`${item.name}-${index}`}><span style={{ background: palette[index % palette.length] }} aria-hidden="true" /><b>{item.name}</b><em>{item.value}</em></li>)}</ul>{items.length > 21 ? <p className="knowledge-method">图例列出前 21 项，完整数值见下方列表；环图仍包含全部项目。</p> : null}</> : null}</>;
-}
-
-export function GeographyChart({ map, items }: { map: ChinaMap; items: CountItem[] }) {
-  const option = useMemo<EChartsOption>(() => {
-    // GeoJSON is validated by the backend and by the public response parser.
-    echarts.registerMap("artlive-china", map as Parameters<typeof echarts.registerMap>[1]);
-    return {
-      ...base,
-      visualMap: { min: 0, max: Math.max(1, ...items.map((item) => item.value)), left: 0, bottom: 5, calculable: false, inRange: { color: ["#ede5d6", "#71856b", "#3d5c4a"] }, text: ["多", "少"], itemWidth: 10, itemHeight: 86 },
-      series: [{ type: "map", map: "artlive-china", roam: true, scaleLimit: { min: 0.7, max: 8 }, data: items, label: { show: false }, itemStyle: { areaColor: "#eae4d8", borderColor: "#b7b29e", borderWidth: 0.6 }, emphasis: { label: { show: true, color: "#2c2218" }, itemStyle: { areaColor: "#cfb690" } } }],
-    };
-  }, [items, map]);
-  return <CanvasChart option={option} label="画家地域分布地图，可拖动和平移缩放，数值见下方列表" className="knowledge-map" />;
 }
 
 export function PoetryChart({ nodes, links, selectedId, focused, onNode, onEdge }: {

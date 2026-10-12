@@ -9,7 +9,6 @@ import { chronologicalItems, filterNodes, graphPage, neighborIds, topGroups, typ
 
 const chartLoading = () => <StatePanel compact kind="loading" title="正在准备图表" />;
 const MetricChart = dynamic(() => import("@/components/knowledge-charts").then((module) => module.MetricChart), { ssr: false, loading: chartLoading });
-const GeographyChart = dynamic(() => import("@/components/knowledge-charts").then((module) => module.GeographyChart), { ssr: false, loading: chartLoading });
 const PoetryChart = dynamic(() => import("@/components/knowledge-charts").then((module) => module.PoetryChart), { ssr: false, loading: chartLoading });
 const format = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 
@@ -35,7 +34,6 @@ function MetricPanel({ title, eyebrow, metric, children, description }: { title:
 
 function PaintingView() {
   const statistics = useKnowledgeResource(api.paintingStatistics);
-  const map = useKnowledgeResource(api.chinaMap);
   if (statistics.loading) return <StatePanel kind="loading" title="正在读取画作统计" description="从当前可浏览画作的公开字段汇总。" />;
   if (statistics.error) return <ResourceFailure {...statistics} error={statistics.error} subject="画作统计" />;
   if (!statistics.data) return null;
@@ -46,10 +44,10 @@ function PaintingView() {
       <section className="knowledge-count glass-panel"><span>不同作者名称</span><strong>{format.format(authorNames.count)}</strong><p>{format.format(authorNames.eligibleRecords)} 幅作品提供有效公开名称</p></section>
       <section className="knowledge-count-note"><span className="knowledge-eyebrow">关于这份图录</span><p>从作品观察笔墨、时代与地域。</p><small>名称去重并非人物身份核验，同名与别名可能影响结果。数字随画廊数据变化。</small></section>
     </div>
-    <details className="knowledge-rules"><summary>统计口径与数据边界</summary><p>{population.label}。与画廊使用同一当前修订、发布状态与媒体资格规则；只对允许公开的字段进行聚合。</p><p>空白、未知值与字面量「0」（待核实）不当作有效分类或作者。每张图单独列出字段覆盖；多值标签按规则拆分，同一作品可能贡献多个项目。字段缺失与未公开合并显示，不推断隐藏内容。</p><p>作者按名称规范化后去重，未核验同名异人或一人多名；地域按公开出生地匹配，不代表创作地点。情感图为文本关键词规则估计，不是模型分析或客观情绪评分。</p></details>
+    <details className="knowledge-rules"><summary>统计口径与数据边界</summary><p>{population.label}。与画廊使用同一当前修订、发布状态与媒体资格规则；只对允许公开的字段进行聚合。</p><p>空白、未知值与字面量「0」（待核实）不当作有效分类或作者。每张图单独列出字段覆盖；多值标签按规则拆分，同一作品可能贡献多个项目。字段缺失与未公开合并显示，不推断隐藏内容。</p><p>作者按名称规范化后去重，未核验同名异人或一人多名；地域按公开作者名称与出生地文本的去重组合计数，不代表已核验人数或创作地点。情感图为文本关键词规则估计，不是模型分析或客观情绪评分。</p></details>
     {population.count === 0 ? <StatePanel kind="empty" title="暂无可浏览画作" description="当前画廊没有符合展示条件的作品，因此没有可统计样本。" /> : <div className="knowledge-grid">
-      <MetricPanel title="画家地域" eyebrow="地域 / GEOGRAPHY" metric={metrics.geography} description="基于公开出生地的地域匹配；可拖动、缩放地图。">
-        {map.loading ? <StatePanel compact kind="loading" title="正在读取地图" /> : map.error ? <ResourceFailure {...map} error={map.error} subject="地域地图" /> : map.data ? <GeographyChart map={map.data} items={metrics.geography.items} /> : null}
+      <MetricPanel title="作者地域分布" eyebrow="地域 / GEOGRAPHY" metric={metrics.geography} description="按公开作者名称与出生地文本的去重组合统计，不代表已核验人数。同名异地或不同出生地描述可能分别计数。图中展示数量前 12 项，完整返回数值见下方列表。">
+        <MetricChart kind="bar" items={metrics.geography.items.slice(0, 12)} unit={metrics.geography.unit} label="作者名称与出生地去重组合的地域分布，图中展示前 12 项，完整返回数值见列表" />
       </MetricPanel>
       <MetricPanel title="朝代分布" eyebrow="时代 / DYNASTY" metric={metrics.dynasty} description="图中按时代顺序展示前 12 项；完整返回数值见下方列表。"><MetricChart kind="bar" items={chronologicalItems(metrics.dynasty.items).slice(0, 12)} unit={metrics.dynasty.unit} label="朝代作品数量，图中展示前 12 项，完整返回数值见列表" /></MetricPanel>
       <MetricPanel title="作品分类数量" eyebrow="题材 / CATEGORY" metric={metrics.category} description="图中展示数量前 12 项；完整返回数值见下方列表。"><MetricChart kind="bar" items={metrics.category.items.slice(0, 12)} unit={metrics.category.unit} label="作品分类数量，图中展示前 12 项，完整返回数值见列表" /></MetricPanel>

@@ -51,7 +51,6 @@
 .knowledge-panel-heading h2 { margin: 6px 0 0; font-size: 1.5rem; }
 .knowledge-panel-heading > p { color: var(--text-soft); font-size: .76rem; margin: 10px 0 0; }
 .knowledge-chart { width: 100%; height: 300px; margin-top: 12px; }
-.knowledge-map { height: 315px; }
 .knowledge-legend { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px 14px; margin: -6px 0 20px; padding: 0; list-style: none; font-size: .69rem; color: var(--text-soft); }
 .knowledge-legend li { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
 .knowledge-legend li > span { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; }
