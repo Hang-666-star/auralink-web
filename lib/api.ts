@@ -11,6 +11,7 @@ import {
   parseWorkflowPage,
 } from "./studio-contracts.ts";
 import { parseUserProfile } from "./profile-contract.ts";
+import { parsePaintingStatistics, parsePoetryGraph } from "./knowledge-contracts.ts";
 import type {
   AuthRequest,
   AuthResponse,
@@ -385,6 +386,10 @@ export const api = {
     },
   )),
   mediaBlob: apiMediaBlob,
+  paintingStatistics: async (token: string, signal?: AbortSignal) =>
+    parsePaintingStatistics(await apiRequest<unknown>("/api/v1/knowledge/painting-statistics", { token, signal })),
+  poetryGraph: async (token: string, signal?: AbortSignal) =>
+    parsePoetryGraph(await apiRequest<unknown>("/api/v1/knowledge/poetry-graph", { token, signal })),
 };
 
 export function errorMessage(error: unknown, fallback = "发生了未知错误，请稍后再试。"): string {
