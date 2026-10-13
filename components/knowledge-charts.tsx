@@ -78,12 +78,14 @@ export function PoetryChart({ nodes, links, selectedId, focused, onNode, onEdge 
   nodes: PoetryNode[]; links: PoetryLink[]; selectedId: string | null; focused: boolean;
   onNode: (id: string) => void; onEdge: (link: PoetryLink) => void;
 }) {
+  const graphDescription = `诗词力导向图，${nodes.length} 个实体、${links.length} 条关系；可通过下方实体卡和关系列表进行键盘操作`;
   const option = useMemo<EChartsOption>(() => {
     const categories = [...new Set(nodes.map((node) => node.category))];
     const neighbors = selectedId ? neighborIds(links, selectedId) : null;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     return {
       ...base, animation: !reducedMotion,
+      aria: { enabled: true, label: { description: graphDescription } },
       series: [{
         type: "graph", layout: "force", roam: true, draggable: true, zoom: !focused && nodes.length > 100 ? 0.35 : 1, center: ["50%", "50%"],
         scaleLimit: { min: 0.15, max: 8 },
@@ -96,8 +98,8 @@ export function PoetryChart({ nodes, links, selectedId, focused, onNode, onEdge 
         links: links.map((link) => ({ source: link.source, target: link.target, value: link.value, name: link.label, lineStyle: { opacity: !selectedId || link.source === selectedId || link.target === selectedId ? 0.58 : 0.06, width: selectedId && (link.source === selectedId || link.target === selectedId) ? 2 : 0.8, color: "#8d9a86", curveness: 0.08 } })),
       }],
     };
-  }, [focused, links, nodes, selectedId]);
-  return <CanvasChart option={option} label={`诗词力导向图，${nodes.length} 个实体、${links.length} 条关系；可通过下方实体卡和关系列表进行键盘操作`} className="knowledge-graph" onClick={(event) => {
+  }, [focused, graphDescription, links, nodes, selectedId]);
+  return <CanvasChart option={option} label={graphDescription} className="knowledge-graph" onClick={(event) => {
     if (event.dataType === "edge" && typeof event.dataIndex === "number" && links[event.dataIndex]) onEdge(links[event.dataIndex]);
     else if (event.data?.id) onNode(event.data.id);
   }} />;
