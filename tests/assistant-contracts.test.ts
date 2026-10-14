@@ -1,7 +1,7 @@
 import { assistantImageFingerprint } from '../lib/assistant-api.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parsePage, validateAssistantResponse, mergeItems, artworkDisplay, assistantDate, platformCitationFields, ragflowAvailable, assistantRetrievalRequest, type Registry } from '../lib/assistant-contracts.ts';
+import { parsePage, validateAssistantResponse, mergeItems, artworkDisplay, assistantDate, platformCitationFields, ragflowAvailable, assistantRetrievalRequest, assistantGenerationAvailable, assistantGenerationNotice, type Registry } from '../lib/assistant-contracts.ts';
 import { resolveMediaUrl } from '../lib/media.ts';
 const id = '3b77654a-8c16-42f4-aaec-b1029f7559c3';
 test('RAG is an explicit available-registry opt-in independent of platform artworks', () => {
@@ -61,4 +61,19 @@ test('Oversized image is refused before reading bytes or computing an upload req
   assert.equal(reads, 0);
   const digest = await assistantImageFingerprint({ type: 'image/png', size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer });
   assert.equal(digest, '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81');
+});
+
+test('manual generation suspension does not erase execution/history availability or broaden disabled Core', () => {
+  const running = { enabled: true, stage: 'EXECUTION', executionAvailable: true };
+  assert.equal(assistantGenerationAvailable(running), true);
+  const paused = { ...running, generationAvailable: false, generationState: 'ASSISTANT_GENERATION_SUSPENDED' };
+  validateAssistantResponse('/status', paused);
+  assert.equal(assistantGenerationAvailable(paused), false);
+  assert.equal(paused.executionAvailable, true);
+  assert.match(assistantGenerationNotice(paused.generationState), /历史与图片仍可查看/);
+  assert.match(assistantGenerationNotice(paused.generationState), /可能继续计费/);
+  assert.match(assistantGenerationNotice('ASSISTANT_GENERATION_CONTROL_UNAVAILABLE'), /没有自动重新提交/);
+  assert.equal(assistantGenerationAvailable({ ...running, executionAvailable: false }), false);
+  assert.throws(() => validateAssistantResponse('/status', { ...running, generationAvailable: 'false' }));
+  assert.throws(() => validateAssistantResponse('/status', { ...running, executionAvailable: false, generationAvailable: true }));
 });

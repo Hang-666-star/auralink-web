@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSession } from '@/components/session-provider';
 import { ApiError, isAbortError } from '@/lib/api';
+import { assistantGenerationNotice } from '@/lib/assistant-contracts';
 /** Every operation captures login generation. Stale successes are rejected as well as 401s. */
 export function useAssistantAccess(onError: (message: string) => void) {
   const { token, sessionIdentity, isCurrentSession, signOutIfCurrent } = useSession();
@@ -24,6 +25,7 @@ export function useAssistantAccess(onError: (message: string) => void) {
   }, [token, sessionIdentity, isCurrentSession, signOutIfCurrent]);
   const report = useCallback((error: unknown) => {
     if (isAbortError(error)) return;
+    if (error instanceof ApiError && ['ASSISTANT_GENERATION_SUSPENDED', 'ASSISTANT_GENERATION_CONTROL_UNAVAILABLE'].includes(error.code || '')) { errorRef.current(assistantGenerationNotice(error.code)); return; }
     errorRef.current(error instanceof Error ? error.message : '操作未完成，请重试。');
   }, []);
   return { request, report, token, sessionIdentity, isCurrentSession, signOutIfCurrent };
