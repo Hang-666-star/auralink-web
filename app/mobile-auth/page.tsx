@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 
 const TOKEN_KEY = "artlive.session.token.v1";
 const ALLOWED_DESTINATIONS = new Set(["/knowledge", "/studio"]);
+const ALLOWED_BACK_PATHS = new Set([
+  "/pages/index/index",
+  "/pages/gallery/gallery",
+  "/pages/knowledge/knowledge",
+  "/pages/assistant/assistant",
+  "/pages/account/account",
+]);
 
 export default function MobileAuthPage() {
   const [error, setError] = useState<string | null>(null);
@@ -12,6 +19,7 @@ export default function MobileAuthPage() {
     const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const token = fragment.get("token")?.trim() ?? "";
     const requestedDestination = fragment.get("next") ?? "";
+    const requestedBackPath = fragment.get("back") ?? "";
 
     // Remove the credential-bearing fragment before any further navigation.
     window.history.replaceState(null, "", "/mobile-auth");
@@ -26,7 +34,11 @@ export default function MobileAuthPage() {
     }
 
     window.localStorage.setItem(TOKEN_KEY, token);
-    window.location.replace(requestedDestination);
+    const backPath = ALLOWED_BACK_PATHS.has(requestedBackPath)
+      ? requestedBackPath
+      : "/pages/index/index";
+    const query = new URLSearchParams({ source: "miniapp", back: backPath });
+    window.location.replace(`${requestedDestination}?${query.toString()}`);
   }, []);
 
   return (
@@ -41,3 +53,4 @@ export default function MobileAuthPage() {
     </main>
   );
 }
+
