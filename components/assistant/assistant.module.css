@@ -58,6 +58,21 @@
 .dialog footer { display:flex; justify-content:flex-end; gap:12px; margin-top:20px; }
 .meta { color:var(--text-soft); font-size:.8rem; }
 .capabilityEvidence { flex:0 1 auto; min-width:0; max-width:100%; overflow-wrap:anywhere; }
+.artworkSelector { min-width:0; margin:16px 0; }
+.artworkSelector .tools { padding:0; }
+.artworkFilters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 14px; }
+.artworkFilters input,.artworkFilters select { min-width:0; width:100%; }
+.artworkResults { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:12px 0; }
+.artworkCard { min-width:0; border:1px solid var(--line); border-radius:10px; padding:12px !important; overflow-wrap:anywhere; }
+.artworkCard h4 { margin:0 0 8px; font-size:1rem; }
+.artworkCard small { display:block; }
+.artworkCard .inline { margin-top:10px; }
+.artworkCard details summary { font-weight:500; }
+.selectedArtworks { display:grid; gap:10px; border-left:3px solid #71827e; padding-left:14px; }
+.selectedArtworks h3 { margin:0; font-size:1rem; }
+.selectedArtworks > p { margin:0; }
+.selectedArtworks > button { justify-self:start; }
+@media(max-width:600px) { .artworkFilters,.artworkResults { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:800px) { .layout { grid-template-columns:minmax(0,1fr); gap:12px; } .sidebar { position:static; max-height:260px; } .sidebar ul { grid-template-columns:repeat(2,minmax(0,1fr)); } .header { padding:16px; flex-wrap:wrap; } .toolbar,.composer,.tools { padding:15px; } .message { padding:14px; } .message[data-role="USER"] { margin-left:12px; } .inline { gap:8px; } .composer .inline > label { width:100%; } .composer select { flex:1; min-width:0; } }
 @media(prefers-reduced-motion:reduce) { .page * { scroll-behavior:auto; } }
 .imageButton { display:block; padding:0; border:0; background:transparent; max-width:100%; }

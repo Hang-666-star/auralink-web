@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useSession } from '@/components/session-provider';
 import { ApiError, isAbortError } from '@/lib/api';
 import { assistantGenerationNotice } from '@/lib/assistant-contracts';
+import { artworkErrorMessage } from '@/lib/assistant-artworks';
 /** Every operation captures login generation. Stale successes are rejected as well as 401s. */
 export function useAssistantAccess(onError: (message: string) => void) {
   const { token, sessionIdentity, isCurrentSession, signOutIfCurrent } = useSession();
@@ -26,6 +27,9 @@ export function useAssistantAccess(onError: (message: string) => void) {
   const report = useCallback((error: unknown) => {
     if (isAbortError(error)) return;
     if (error instanceof ApiError && ['ASSISTANT_GENERATION_SUSPENDED', 'ASSISTANT_GENERATION_CONTROL_UNAVAILABLE'].includes(error.code || '')) { errorRef.current(assistantGenerationNotice(error.code)); return; }
+    if (error instanceof ApiError && (error.code || '').startsWith('ASSISTANT_ARTWORK_')) {
+      errorRef.current(error.code === 'ASSISTANT_ARTWORK_REQUIRED' ? '请先查找并选用平台作品，或清除作品参考后发送普通问题。' : error.code === 'ASSISTANT_ARTWORK_CONTEXT_LIMIT' ? '所选作品资料超出单次上下文上限；请减少选择后重试，没有自动发起模型请求。' : artworkErrorMessage(error)); return;
+    }
     errorRef.current(error instanceof Error ? error.message : '操作未完成，请重试。');
   }, []);
   return { request, report, token, sessionIdentity, isCurrentSession, signOutIfCurrent };

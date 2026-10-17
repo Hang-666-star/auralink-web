@@ -5,13 +5,15 @@ import { useSession } from '@/components/session-provider';
 import { StatePanel } from '@/components/state-panel';
 import { ApiError, isAbortError } from '@/lib/api';
 import { assistantPage, assistantRequest, exportAssistant, OperationLedger } from '@/lib/assistant-api';
-import { terminal, stateLabel, retrievalLabel, stageLabels, mergeItems, ragflowAvailable, assistantRetrievalRequest, assistantGenerationAvailable, assistantGenerationNotice, type AssistantStatus, type AssistantSession, type Branch, type Message, type Run, type Registry, type Citation, type Choice, type Summary, type Timeline, type Page, type ArtworkReference, artworkDisplay, assistantDate, platformCitationFields } from '@/lib/assistant-contracts';
+import { terminal, stateLabel, retrievalLabel, stageLabels, mergeItems, ragflowAvailable, assistantRetrievalRequest, assistantGenerationAvailable, assistantGenerationNotice, type AssistantStatus, type AssistantSession, type Branch, type Message, type Run, type Registry, type Citation, type Choice, type Summary, type Timeline, type Page, type ArtworkReference, assistantDate, platformCitationFields } from '@/lib/assistant-contracts';
 import { subscribeAssistant } from '@/lib/assistant-stream';
 import { useAssistantAccess } from './use-assistant-access';
 import { useAssistantAttachments } from './use-assistant-attachments';
 import { PrivateAttachment } from './private-attachment';
 import { AssistantStorage } from './assistant-storage';
 import { useBrowserSpeech } from './use-browser-speech';
+import { ArtworkSelection } from './artwork-selection';
+import { selectedArtworkReferences, reconcileRejectedArtworkSubmission, artworkRunFailureNotice } from '@/lib/assistant-artworks';
 import styles from './assistant.module.css';
 const enc = encodeURIComponent;
 const empty = <T,>(): Page<T> => ({ items: [], nextCursor: null, hasMore: false });
@@ -126,8 +128,8 @@ function BranchWorkspace({ id, branchId, status, registry, session, ledger, revi
   const branchRef = useRef(onBranch); branchRef.current = onBranch;
   const [activityTick, setActivityTick] = useState(0);
   useEffect(() => { if (!status.executionAvailable) return; const timer = setInterval(() => setActivityTick(value => value + 1), 2500); return () => clearInterval(timer); }, [status.executionAvailable]);
-  const [artworkQuery, setArtworkQuery] = useState(''); const [artworkResults, setArtworkResults] = useState<ArtworkReference[]>([]); const [selectedArtworks, setSelectedArtworks] = useState<ArtworkReference[]>([]); const [searched, setSearched] = useState(false);
-  const [branch, setBranch] = useState<Branch | null>(null); const [text, setText] = useState(''); const [model, setModel] = useState(''); const [artworks, setArtworks] = useState(true); const [ragflow, setRagflow] = useState(false); const [busy, setBusy] = useState(false); const busyRef = useRef(false); const composing = useRef(false); const [connection, setConnection] = useState('');
+  const [selectedArtworks, setSelectedArtworks] = useState<ArtworkReference[]>([]);
+  const [branch, setBranch] = useState<Branch | null>(null); const [text, setText] = useState(''); const [model, setModel] = useState(''); const [ragflow, setRagflow] = useState(false); const [busy, setBusy] = useState(false); const busyRef = useRef(false); const composing = useRef(false); const [connection, setConnection] = useState('');
   const [live, setLive] = useState<Run | null>(null); const [editing, setEditing] = useState<Message | null>(null); const [editText, setEditText] = useState(''); const [notice, setNotice] = useState(''); const [timelineOpen, setTimelineOpen] = useState(false); const [summaryOpen, setSummaryOpen] = useState(false);
   const draft = useAssistantAttachments(id, revision, ledger, access); const attachments = draft.attachments;
   const messages = usePage<Message>(`/sessions/${enc(id)}/messages/page?branchId=${enc(branchId)}`, access, row => row.id, revision, true);
@@ -198,22 +200,30 @@ function BranchWorkspace({ id, branchId, status, registry, session, ledger, revi
     return () => controller.abort();
   }, [runningId, token, sessionIdentity, isCurrentSession, signOutIfCurrent, reload]);
   const act = async (action: () => Promise<void>) => { if (busyRef.current) return; busyRef.current = true; setBusy(true); setError(''); try { await action(); } catch (error) { report(error); } finally { busyRef.current = false; setBusy(false); } };
-  const command = (value: string, ids: string[]) => ({ branchId, expectedVersion: branch?.version, text: value, attachmentIds: ids, modelKey: model, retrieval: assistantRetrievalRequest(registry, artworks, ragflow), artworkRefs: selectedArtworks.map(artwork => ({ artworkId: artwork.artworkId, expectedBatchId: artwork.batchId, expectedRevision: artwork.revision, includeImage: false })) });
+  const command = (value: string, ids: string[]) => ({ branchId, expectedVersion: branch?.version, text: value, attachmentIds: ids, modelKey: model, retrieval: assistantRetrievalRequest(registry, selectedArtworks.length > 0, ragflow), artworkRefs: selectedArtworkReferences(selectedArtworks) });
+  const submitCommand = async (path: string, payload: ReturnType<typeof command>, scope: string, operation: string) => {
+    const requestKey = await ledger.key(scope, payload);
+    try {
+      const result = await request((token, signal) => assistantRequest<{ run: Run; replay: boolean }>(path, token, signal, 'POST', { ...payload, requestKey }));
+      setNotice('');
+      return result;
+    } catch (error) {
+      const reconciled = await reconcileRejectedArtworkSubmission(error, ledger, scope, requestKey, () => request((token, signal) => assistantRequest<{ status: string }>('/requests/resolve', token, signal, 'POST', { operation, requestKey, sessionId: id })));
+      if (reconciled) setNotice('作品校验未通过；已核对这次请求未创建执行。可调整作品选择后主动发送，不会自动重试。');
+      throw error;
+    }
+  };
   const submit = async (event?: React.FormEvent) => {
     event?.preventDefault(); if (!generationAvailable || (!text.trim() && !attachments.length) || !branch || !selectedModel || pendingChat || busyRef.current || messages.loading || messages.error || draft.loading || draft.error || draft.hasMore || attachments.length > 4) return;
-    await act(async () => { const payload = command(text, attachments.map(image => image.id)); const scope = `CHAT_EXECUTION:${id}`; const requestKey = await ledger.key(scope, payload); const result = await request((token, signal) => assistantRequest<{ run: Run; replay: boolean }>(`/sessions/${enc(id)}/runs`, token, signal, 'POST', { ...payload, requestKey })); ledger.resolved(scope); setLive(result.run); setText(''); setSelectedArtworks([]); reload(); });
+    await act(async () => { const payload = command(text, attachments.map(image => image.id)); const scope = `CHAT_EXECUTION:${id}`; const result = await submitCommand(`/sessions/${enc(id)}/runs`, payload, scope, 'CHAT_EXECUTION'); ledger.resolved(scope); setLive(result.run); setText(''); setSelectedArtworks([]); reload(); });
   };
-  const searchArtworks = async () => act(async () => {
-    const result = await request((token, signal) => assistantRequest<ArtworkReference[]>(`/artworks?query=${enc(artworkQuery.trim())}`, token, signal));
-    setArtworkResults(result); setSearched(true);
-  });
   const upload = async (file: File | undefined) => { if (file) await act(() => draft.upload(file)); };
   const cancel = async (run: Run) => act(async () => { const value = await request((token, signal) => assistantRequest<Run>(`/runs/${enc(run.id)}/cancel`, token, signal, 'POST')); setLive(value); reload(); });
   const retry = async (run: Run) => act(async () => { requireGeneration(); if (!branch) return; const scope = `RETRY_EXECUTION:${id}:${run.id}`; const payload = { expectedVersion: branch.version, acknowledgePossiblePriorCharge: true }; const key = await ledger.key(scope, payload); const result = await request((token, signal) => assistantRequest<{ run: Run }>(`/runs/${enc(run.id)}/retry`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); onBranch(result.run.branchId); setLive(result.run); reload(); });
   const choose = async (run: Run, cardId: string, optionId: string) => act(async () => { requireGeneration(); if (!branch) return; const payload = { branchId, expectedVersion: branch.version, modelKey: model, cardId, optionId }; const scope = `CHAT_EXECUTION:${id}`; const key = await ledger.key(scope, payload); const result = await request((token, signal) => assistantRequest<{ run: Run }>(`/runs/${enc(run.id)}/choices`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); setLive(result.run); reload(); });
   const saveEdit = async (event: React.FormEvent) => { event.preventDefault(); await act(async () => { if (!editing || !branch) return; const payload = { branchId, expectedVersion: branch.version, text: editText }; const scope = `REVISE_MESSAGE:${id}:${editing.id}`; const key = await ledger.key(scope, payload); const next = await request((token, signal) => assistantRequest<Branch>(`/sessions/${enc(id)}/messages/${enc(editing.id)}/revisions`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); setEditing(null); onBranch(next.id); }); };
   const editedHead = messages.items.find(message => message.id === branch?.headMessageId && message.role === 'USER' && message.supersedesId && !message.runId);
-  const executeEdit = async () => act(async () => { requireGeneration(); if (!editedHead) return; const payload = command(editedHead.body, []); const scope = `EDITED_EXECUTION:${id}`; const key = await ledger.key(scope, payload); const result = await request((token, signal) => assistantRequest<{ run: Run }>(`/sessions/${enc(id)}/edited-runs`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); setLive(result.run); reload(); });
+  const executeEdit = async () => act(async () => { requireGeneration(); if (!editedHead) return; const payload = command(editedHead.body, []); const scope = `EDITED_EXECUTION:${id}`; const result = await submitCommand(`/sessions/${enc(id)}/edited-runs`, payload, scope, 'EDITED_EXECUTION'); ledger.resolved(scope); setLive(result.run); reload(); });
   const summary = async () => act(async () => { requireGeneration(); const payload = { branchId }; const scope = `SUMMARY_EXECUTION:${id}`; const key = await ledger.key(scope, payload); const run = await request((token, signal) => assistantRequest<Run>(`/sessions/${enc(id)}/summaries`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); setLive(run); setSummaryOpen(true); reload(); });
   const classify = async (row: Timeline, label: string) => act(async () => { const payload = { expectedVersion: row.classificationVersion, label }; const scope = `CLASSIFY_MESSAGE:${id}:${row.messageId}`; const key = await ledger.key(scope, payload); await request((token, signal) => assistantRequest(`/sessions/${enc(id)}/messages/${enc(row.messageId)}/classification`, token, signal, 'POST', { ...payload, requestKey: key })); ledger.resolved(scope); reload(); });
   const currentLive = live && live.branchId === branchId ? live : null;
@@ -232,9 +242,8 @@ function BranchWorkspace({ id, branchId, status, registry, session, ledger, revi
     </section>
     {status.executionAvailable ? <form className={`glass-panel ${styles.composer}`} onSubmit={event => void submit(event)} aria-label="发送消息">
       <div className={styles.inline}><label>模型<select aria-label="模型" value={model} onChange={event => setModel(event.target.value)} disabled={busy}>{!availableModels.length ? <option value="">暂无可执行模型</option> : null}{registry?.models.map(item => <option value={item.id} key={item.id} disabled={!item.enabled || !item.configured || !item.capabilities.streaming}>{item.label}{item.capabilities.images ? ' · 图片' : ' · 文字'}{!item.configured ? ' · 未配置' : !item.enabled ? ' · 停用' : ''}</option>)}</select></label><span className={`${styles.meta} ${styles.capabilityEvidence}`}>能力声明：{selectedModel?.evidence || '尚无实际提供商验证'}</span></div>
-      <div className={styles.inline}><label><input type="checkbox" checked={artworks} onChange={event => { setArtworks(event.target.checked); if (!event.target.checked) setSelectedArtworks([]); }} />平台作品参考</label>{ragflowAvailable(registry) ? <label><input type="checkbox" checked={ragflow} onChange={event => setRagflow(event.target.checked)} />RAG 文档检索</label> : null}</div>
-      <details className={styles.tools}><summary>查找平台作品</summary><p className={styles.meta}>检索当前可浏览作品的公开资料，最多选择 5 项。这里只发送公开文字参考，不自动发送作品图片。</p><div className={styles.inline}><label>作品关键词<input aria-label="作品关键词" type="search" maxLength={200} value={artworkQuery} onChange={event => setArtworkQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void searchArtworks(); } }} /></label><button type="button" className="button" disabled={busy || !artworkQuery.trim()} onClick={() => void searchArtworks()}>查找作品</button></div>{searched && !artworkResults.length ? <p>没有匹配的公开作品；可以调整关键词，或不选资料继续提问。</p> : null}{artworkResults.map(artwork => { const picked = selectedArtworks.some(value => value.artworkId === artwork.artworkId); return <article key={artwork.artworkId} data-testid="artwork-search-result">{artworkDisplay(artwork).map((field, index) => <p key={index}>{field.label}：{field.value} <small>（{field.uncertainty || '未独立核验'}）{field.raw ? `原始文本：${field.raw}` : ''}</small></p>)}<span className={styles.meta}>修订 {artwork.revision} · {artwork.artworkId}</span><div className={styles.inline}><button type="button" className="button" aria-pressed={picked} disabled={busy || (!picked && selectedArtworks.length >= 5)} onClick={() => { setArtworks(true); setSelectedArtworks(current => picked ? current.filter(value => value.artworkId !== artwork.artworkId) : [...current, artwork]); }}>{picked ? '取消选用' : '选用此作品'}</button><Link href={`/gallery/${artwork.artworkId}`}>查看作品详情</Link></div></article>; })}</details>
-      {selectedArtworks.length ? <p className={styles.meta}>已选 {selectedArtworks.length} 项平台作品资料，按选定批次与修订校验。<button type="button" className={styles.small} onClick={() => setSelectedArtworks([])}>清除作品参考</button></p> : null}
+      {ragflowAvailable(registry) ? <div className={styles.inline}><label><input type="checkbox" checked={ragflow} onChange={event => setRagflow(event.target.checked)} />RAG 文档检索</label></div> : null}
+      <ArtworkSelection selected={selectedArtworks} onChange={setSelectedArtworks} disabled={busy || !!pendingChat} />
       <label>消息<textarea aria-label="消息" value={text} maxLength={32000} placeholder="例如：我想画一幅雨后山水，怎样安排远近与留白？" onChange={event => setText(event.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) { event.preventDefault(); void submit(); } }} /></label>
       {draft.loading ? <p role="status">正在核对待发送图片…</p> : null}
       {draft.error ? <p role="alert" className={styles.error}>{draft.error}<button type="button" className={styles.small} onClick={() => void draft.refresh()}>核对上传状态</button></p> : null}
@@ -264,6 +273,7 @@ function RunDetails({ id, known, access, choose, retry, disabled }: { id: string
   if (!data) return null;
   return <>
     <p className={styles.meta}>模型 {data.run.modelKey} · 尝试 {data.run.attempt}</p>
+    {artworkRunFailureNotice(data.run.errorCode) ? <p className={styles.notice} role="alert">{artworkRunFailureNotice(data.run.errorCode)}</p> : null}
     {Object.entries(data.run.retrieval || {}).map(([source, result]) => <p className={styles.meta} key={source}>{source === 'artworks' ? '平台作品' : source === 'ragflow' ? 'RAG 文档' : source}：{retrievalLabel(result && typeof result === 'object' && 'state' in result ? result.state : result)}</p>)}
     {data.choices.map(card => <section key={card.id} className={styles.choices} data-testid="choice-card"><h4>{card.title}</h4><p className={styles.meta}>选择卡使用当前模型继续对话，不附加输入框中的图片或重新检索。</p><div className={styles.inline}>{card.options.map(option => <button key={option.id} className="button" disabled={disabled} onClick={() => void choose(data.run, card.id, option.id)}>{option.label}</button>)}</div></section>)}
     {data.citations.length ? <details className={styles.tools}><summary>参考来源 · {data.citations.length}</summary>{data.citations.map(citation => <CitationView key={citation.id} citation={citation} />)}</details> : null}
@@ -272,11 +282,14 @@ function RunDetails({ id, known, access, choose, retry, disabled }: { id: string
 }
 function CitationView({ citation }: { citation: Citation }) {
   const artworkId = citation.provenance.artworkId;
+  const deliveryObserved = citation.provenance.deliveryEvidence === 'MODEL_STREAM_OBSERVED';
   const safeArtwork = citation.sourceType === 'PLATFORM_ARTWORK' && typeof artworkId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(artworkId);
   const fields = citation.sourceType === 'PLATFORM_ARTWORK' ? platformCitationFields(citation.excerpt) : null;
-  return <article className={styles.citation}><strong>{citation.sourceType === 'PLATFORM_ARTWORK' ? '平台作品' : 'RAG 文档'} [{citation.ordinal}]</strong>
+  return <article className={styles.citation}><strong>{citation.sourceType === 'PLATFORM_ARTWORK' ? (deliveryObserved ? '平台作品 · 本次回答的文字快照' : '平台作品 · 已保存来源快照') : 'RAG 文档'} [{citation.ordinal}]</strong>
     {fields?.length ? fields.map((field, index) => <p key={index}>{field.label}：{field.value} <small>（{field.uncertainty || '未独立核验'}）{field.raw ? `原始文本：${field.raw}` : ''}</small></p>) : <p className={styles.body}>{citation.excerpt}</p>}
-    {safeArtwork ? <Link href={`/gallery/${artworkId}`}>查看受控作品详情</Link> : null}
-    <details><summary>引用与版本</summary><small>引用 {citation.id}<br />来源 {citation.sourceId}<br />版本 {citation.sourceVersion || '上游未提供版本'}<br />公开投影 {citation.projectionVersion || '不适用'}<br />摘录 SHA-256 {citation.excerptSha256}</small><small>引用仅来自已保存检索结果。正文中的其他编号或链接不自动视为可信来源。</small></details>
+    {citation.sourceType === 'PLATFORM_ARTWORK' ? <p className={styles.meta}>{deliveryObserved ? '已向模型提供以下公开文字并观察到响应；这不证明模型采用了每个字段，也不代表模型查看了原画。' : '这是已保存的来源记录；历史记录未核验是否实际提供给模型。'}当前详情可能已更新或不再可访问。记录事实与模型解释应分别理解。</p> : null}
+    {citation.provenance.contextTruncated === true ? <p className={styles.meta}>为控制上下文长度，仅提供了所记录字段的有界摘录；未提供的细节不应视为已核实。</p> : null}
+    {safeArtwork ? <Link href={`/gallery/${artworkId}`}>查看当前受控作品详情</Link> : null}
+    <details><summary>引用与版本</summary><small>引用 {citation.id}<br />来源 {citation.sourceId}<br />版本 {citation.sourceVersion || '上游未提供版本'}<br />公开投影 {citation.projectionVersion || '不适用'}<br />摘录 SHA-256 {citation.excerptSha256}</small><small>{deliveryObserved ? '投递证据：已观察到模型流响应。' : citation.provenance.deliveryEvidence === 'LOOKUP_ONLY' ? '本次仅查询，未提交模型。' : '历史投递状态未核验。'}正文中的其他编号或链接不自动视为可信来源。</small></details>
   </article>;
 }
