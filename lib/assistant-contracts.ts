@@ -43,11 +43,23 @@ export function validateAssistantResponse(path: string, value: unknown): void {
   const uuid = (item: unknown) => typeof item === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item);
   const run = (item: unknown) => { const row = object(item); if (!uuid(row.id) || !uuid(row.sessionId) || !uuid(row.branchId) || typeof row.checkpoint !== 'string' || !Number.isSafeInteger(row.sequence) || typeof row.status !== 'string' || !['QUEUED', 'EXECUTING', 'COMPLETED', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(row.status)) fail(); };
   const message = (item: unknown) => { const row = object(item); if (!uuid(row.id) || typeof row.body !== 'string' || !Array.isArray(row.attachmentIds) || !row.attachmentIds.every(uuid)) fail(); };
+  const artwork = (item: unknown) => {
+    const row = object(item);
+    if (!uuid(row.artworkId) || !uuid(row.batchId) || !Number.isSafeInteger(row.revision) || Number(row.revision) < 1 || typeof row.projectionVersion !== 'string' || typeof row.sourceRecordId !== 'string' || !Array.isArray(row.fields) || row.fields.length > 50) fail();
+    for (const raw of row.fields as unknown[]) { const field = object(raw); if (typeof field.key !== 'string' || (field.value !== null && typeof field.value !== 'string') || (field.rawValue !== null && typeof field.rawValue !== 'string') || typeof field.valueStatus !== 'string' || typeof field.assertionStatus !== 'string') fail(); }
+  };
   const address = path.split('?')[0];
   if (address === '/storage') { parseAssistantStorage(value); }
   else if (address === '/status') { const row = object(value); if (typeof row.enabled !== 'boolean' || typeof row.executionAvailable !== 'boolean' || (row.generationAvailable !== undefined && typeof row.generationAvailable !== 'boolean') || (row.generationState !== undefined && typeof row.generationState !== 'string') || (row.generationAvailable === true && row.executionAvailable !== true)) fail(); }
   else if (address === '/models') { const row = object(value); if (!Array.isArray(row.models)) return fail(); for (const model of row.models) { const entry = object(model); const capabilities = object(entry.capabilities); if (typeof entry.id !== 'string' || typeof entry.label !== 'string' || typeof entry.enabled !== 'boolean' || typeof entry.configured !== 'boolean' || typeof capabilities.images !== 'boolean' || typeof capabilities.streaming !== 'boolean') fail(); } }
-  else if (address === '/artworks') { if (!Array.isArray(value)) return fail(); for (const item of value) { const row = object(item); if (!uuid(row.artworkId) || !uuid(row.batchId) || !Number.isSafeInteger(row.revision) || Number(row.revision) < 1 || !Array.isArray(row.fields)) fail(); for (const raw of row.fields as unknown[]) { const field = object(raw); if (typeof field.key !== 'string' || (field.value !== null && typeof field.value !== 'string') || (field.rawValue !== null && typeof field.rawValue !== 'string') || typeof field.assertionStatus !== 'string') fail(); } } }
+  else if (address === '/artworks') { if (!Array.isArray(value)) return fail(); value.forEach(artwork); }
+  else if (address === '/artworks/page') {
+    const row = object(value);
+    if (!Array.isArray(row.items) || ![row.totalElements, row.totalPages, row.page, row.size].every(Number.isSafeInteger) || Number(row.totalElements) < 0 || Number(row.page) < 0 || Number(row.size) < 1 || Number(row.size) > 10 || Number(row.totalPages) !== Math.ceil(Number(row.totalElements) / Number(row.size)) || row.items.length > Number(row.size) || row.items.length > Number(row.totalElements)) return fail();
+    row.items.forEach(artwork);
+    if (new Set(row.items.map(item => object(item).artworkId)).size !== row.items.length) fail();
+  }
+  else if (/^\/artworks\/[^/]+$/.test(address)) artwork(value);
   else if (/\/page$/.test(address)) {
     const page = parsePage<unknown>(value);
     if (address.includes('/messages/')) page.items.forEach(message);
@@ -64,9 +76,9 @@ export function validateAssistantResponse(path: string, value: unknown): void {
   else if (/^\/attachments\/[^/]+$/.test(address) && value !== undefined) { const row = object(value); if (!uuid(row.id) || typeof row.contentUrl !== 'string' || !['image/png', 'image/jpeg'].includes(String(row.mimeType))) fail(); }
 }
 
-export type ArtworkReference = { artworkId: string; batchId: string; revision: number; projectionVersion: string; sourceRecordId: string; fields: { key: string; value: string | null; rawValue: string | null; valueStatus: string; assertionStatus: string }[] };
+export type ArtworkReference = { artworkId: string; batchId: string; revision: number; projectionVersion: string; sourceRecordId: string; fieldTextLimit?: number; fields: { key: string; value: string | null; rawValue: string | null; valueStatus: string; assertionStatus: string }[] };
 export function publicArtworkFields(fields: ArtworkReference['fields']) {
-  const labels: Record<string, string> = { 'core.title': '作品名', 'legacy.title': '作品名', 'legacy.painting_name': '作品名', 'core.author_name': '作者名称', 'legacy.author_name': '作者名称', 'legacy.creation_dynasty_raw': '朝代', 'core.category': '分类', 'legacy.category': '分类', 'legacy.subject': '题材', 'legacy.painting_school': '画派', 'legacy.style': '风格', 'annotation.style': '风格', 'annotation.subject_secondary': '次级题材', 'legacy.color': '设色', 'legacy.composition': '构图', 'legacy.artistic_conception': '意境', 'legacy.brushwork': '笔法', 'legacy.ink_method': '墨法', 'legacy.painting_material': '材料', 'legacy.cultural_symbol': '文化意象' };
+  const labels: Record<string, string> = { 'core.title': '作品名', 'legacy.title': '作品名', 'legacy.painting_name': '作品名', 'core.author_name': '作者名称', 'legacy.author_name': '作者名称', 'legacy.creation_dynasty_raw': '朝代', 'core.category': '分类', 'legacy.category': '分类', 'legacy.subject': '题材', 'legacy.painting_school': '画派', 'legacy.style': '风格', 'annotation.style': '风格', 'annotation.subject_secondary': '次级题材', 'legacy.color': '设色', 'legacy.composition': '构图', 'legacy.artistic_conception': '意境', 'legacy.brushwork': '笔法', 'legacy.ink_method': '墨法', 'legacy.painting_material': '材料', 'legacy.cultural_symbol': '文化意象', 'legacy.collection_institution': '收藏机构', 'legacy.collection_platform': '收录平台' };
   return fields.filter(field => labels[field.key]).map(field => ({ label: labels[field.key], value: field.value || field.rawValue || '未提供', raw: field.rawValue && field.rawValue !== field.value ? field.rawValue : null, uncertainty: field.value === '0' || field.assertionStatus === 'UNRESOLVED' ? '待核实' : field.assertionStatus === 'UNKNOWN' || field.valueStatus === 'MISSING' ? '未知或缺失' : field.assertionStatus === 'UNSPECIFIED' ? '未独立核验' : field.assertionStatus }));
 }
 
