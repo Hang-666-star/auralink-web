@@ -1,6 +1,7 @@
-import { Navigation } from "@/components/navigation";
-import { MiniAppBackButton } from "@/components/miniapp-back-button";
 import Script from "next/script";
+
+import { MiniAppBackButton } from "@/components/miniapp-back-button";
+import { Navigation } from "@/components/navigation";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -16,4 +17,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </>
   );
 }
-
