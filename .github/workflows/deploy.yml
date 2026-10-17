@@ -49,11 +49,12 @@ jobs:
               exit 1
             fi
             if [ ! -e "$deploy_lock" ]; then
-              install -o root -g root -m 600 /dev/null "$deploy_lock"
-            else
-              chown root:root "$deploy_lock"
-              chmod 600 "$deploy_lock"
+              install -m 600 /dev/null "$deploy_lock"
             fi
+            if [ "$(id -u)" -eq 0 ]; then
+              chown root:root "$deploy_lock"
+            fi
+            chmod 600 "$deploy_lock"
 
             fetch_ok=0
             for attempt in 1 2 3; do
